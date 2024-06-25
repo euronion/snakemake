@@ -46,7 +46,7 @@ from snakemake.resources import (
     eval_resource_expression,
     parse_resources,
 )
-from snakemake.settings import (
+from snakemake.settings.types import (
     ChangeType,
     ConfigSettings,
     DAGSettings,
@@ -1496,6 +1496,12 @@ def get_argument_parser(profiles=None):
         "started. Only applies if --no-shared-fs is set or executors are used that "
         "imply no shared FS (e.g. the kubernetes executor).",
     )
+    group_behavior.add_argument(
+        "--benchmark-extended",
+        default=False,
+        action="store_true",
+        help="Write extended benchmarking metrics.",
+    )
 
     group_cluster = parser.add_argument_group("REMOTE EXECUTION")
 
@@ -1670,6 +1676,7 @@ def get_argument_parser(profiles=None):
         "--singularity-args",
         default="",
         metavar="ARGS",
+        parse_func=maybe_base64(str),
         help="Pass additional args to apptainer/singularity.",
     )
 
@@ -1761,7 +1768,7 @@ def parse_args(argv):
 def parse_quietness(quietness) -> Set[Quietness]:
     if quietness is not None and len(quietness) == 0:
         # default case, set quiet to progress and rule
-        quietness = [Quietness.PROGRESS, Quietness.RULES]
+        quietness = {Quietness.PROGRESS, Quietness.RULES}
     else:
         quietness = Quietness.parse_choices_set(quietness)
     return quietness
@@ -1875,8 +1882,10 @@ def args_to_api(args, parser):
         if executor_plugin.common_settings.local_exec:
             # use --jobs as an alias for --cores
             args.cores = args.jobs
+            args.jobs = None
         elif executor_plugin.common_settings.dryrun_exec:
             args.cores = 1
+            args.jobs = None
 
     # start profiler if requested
     if args.runtime_profile:
@@ -1901,6 +1910,7 @@ def args_to_api(args, parser):
             log_handlers=log_handlers,
             keep_logger=False,
             stdout=args.dryrun,
+            benchmark_extended=args.benchmark_extended,
         )
     ) as snakemake_api:
         deployment_method = args.software_deployment_method

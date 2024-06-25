@@ -44,6 +44,7 @@ from snakemake.io import (
     ReportObject,
 )
 from snakemake.exceptions import (
+    InputOpenException,
     RuleException,
     IOFileException,
     WildcardError,
@@ -635,6 +636,9 @@ class Rule(RuleInterface):
             except IncompleteCheckpointException as e:
                 value = incomplete_checkpoint_func(e)
                 incomplete = True
+            except InputOpenException as e:
+                e.rule = self
+                raise e
             except Exception as e:
                 if "input" in aux_params and is_file_not_found_error(
                     e, aux_params["input"]
@@ -742,9 +746,10 @@ class Rule(RuleInterface):
                         and not isinstance(item_, str)
                         and not isinstance(item_, Path)
                     ):
-                        raise WorkflowError(
+                        raise InputFunctionException(
                             f"Function did not return str or iterable of str. Encountered: {item} ({type(item)})",
                             rule=self,
+                            wildcards=wildcards,
                         )
 
                     if from_callable and path_modifier is not None and not incomplete:

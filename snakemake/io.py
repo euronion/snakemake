@@ -47,6 +47,7 @@ from snakemake.common import (
     is_namedtuple_instance,
 )
 from snakemake.exceptions import (
+    InputOpenException,
     MissingOutputException,
     WildcardError,
     WorkflowError,
@@ -325,8 +326,18 @@ class _IOFile(str, AnnotatedStringInterface):
         """Open this file.
 
         This can (and should) be used in a `with`-statement.
+        If the file is a remote storage file, retrieve it first if necessary.
         """
-        f = open(self)
+        if not os.path.exists(self):
+            raise InputOpenException(self)
+        f = open(
+            self,
+            mode=mode,
+            buffering=buffering,
+            encoding=encoding,
+            errors=errors,
+            newline=newline,
+        )
         try:
             yield f
         finally:
@@ -1249,6 +1260,7 @@ def expand(*args, **wildcard_values):
 
     filepatterns = list(map(path_to_str, filepatterns))
 
+    # check if there are any flags defined
     for filepattern in filepatterns:
         filepattern_flags = {
             key: value
@@ -1305,10 +1317,18 @@ def expand(*args, **wildcard_values):
                     values = [values]
                 yield [(wildcard, value) for value in values]
 
+        # string.Formatter does not fully support AnnotatedString (flags are discarded)
+        # so, if they exist, need to be copied
+        def copy_flags(from_path, dest_path):
+            if hasattr(from_path, "flags"):
+                dest_path = AnnotatedString(dest_path)
+                dest_path.flags.update(from_path.flags)
+            return dest_path
+
         formatter = string.Formatter()
         try:
             return [
-                formatter.vformat(filepattern, (), comb)
+                copy_flags(filepattern, formatter.vformat(filepattern, (), comb))
                 for filepattern in filepatterns
                 for comb in map(
                     format_dict, combinator(*flatten(wildcard_values[filepattern]))
@@ -1476,6 +1496,26 @@ def strip_wildcard_constraints(pattern):
     return WILDCARD_REGEX.sub(strip_constraint, pattern)
 
 
+class AttributeGuard:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, *args, **kwargs):
+        """
+        Generic function that throws an `AttributeError`.
+
+        Used as replacement for functions such as `index()` and `sort()`,
+        which may be overridden by workflows, to signal to a user that
+        these functions should not be used.
+        """
+        raise AttributeError(
+            f"{self.name}() cannot be used on snakemake input, output, resources etc.; "
+            "instead it is a valid name for items on those objects. If you want e.g. to "
+            "sort, convert to a plain list before or directly use sorted() on the "
+            "object."
+        )
+
+
 class Namedlist(list):
     """
     A list that additionally provides functions to name items. Further,
@@ -1505,7 +1545,7 @@ class Namedlist(list):
         # default to throwing exception if called to prevent use as functions
         self._allowed_overrides = ["index", "sort"]
         for name in self._allowed_overrides:
-            setattr(self, name, functools.partial(self._used_attribute, _name=name))
+            setattr(self, name, AttributeGuard(name))
 
         if toclone is not None:
             if custom_map is not None:
@@ -1534,20 +1574,6 @@ class Namedlist(list):
             for key, item in fromdict.items():
                 self.append(item)
                 self._add_name(key)
-
-    @staticmethod
-    def _used_attribute(*args, _name, **kwargs):
-        """
-        Generic function that throws an `AttributeError`.
-
-        Used as replacement for functions such as `index()` and `sort()`,
-        which may be overridden by workflows, to signal to a user that
-        these functions should not be used.
-        """
-        raise AttributeError(
-            "{_name}() cannot be used; attribute name reserved"
-            " for use in some existing workflows".format(_name=_name)
-        )
 
     def _add_name(self, name):
         """
@@ -1649,7 +1675,11 @@ class Namedlist(list):
         return self.__class__.__call__(toclone=self)
 
     def get(self, key, default_value=None):
-        return self.__dict__.get(key, default_value)
+        value = self.__dict__.get(key, default_value)
+        # handle internally guarded values like sort or index (see AttributeGuard)
+        if isinstance(value, AttributeGuard):
+            return default_value
+        return value
 
     def __getitem__(self, key):
         if isinstance(key, str):

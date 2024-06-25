@@ -8,7 +8,7 @@ import sys
 import subprocess as sp
 from pathlib import Path
 from snakemake.resources import DefaultResources, GroupResources
-from snakemake.settings import RerunTrigger
+from snakemake.settings.enums import RerunTrigger
 
 from snakemake.shell import shell
 
@@ -347,7 +347,12 @@ def test_wildcard_keyword():
 
 @skip_on_windows
 def test_benchmark():
-    run(dpath("test_benchmark"), check_md5=False)
+    run(dpath("test_benchmark"), benchmark_extended=True, check_md5=False)
+
+
+@skip_on_windows
+def test_benchmark_jsonl():
+    run(dpath("test_benchmark_jsonl"), benchmark_extended=True, check_md5=False)
 
 
 def test_temp_expand():
@@ -616,6 +621,18 @@ def test_dup_out_patterns():
     run(dpath("test_dup_out_patterns"), shouldfail=True)
 
 
+def test_issue2826_failed_binary_logs():
+    """Show how a binary log file crushes `show_logs`
+
+    The log file in this test is a binary file.
+    The `show_failed_logs` is activated by default using `run`,
+    thus `show_logs` will be called at the end of the test.
+    Thus this test will check if `show_logs` is able to handle
+    the binary log file.
+    """
+    run(dpath("test_issue2826_failed_binary_logs"), shouldfail=True)
+
+
 # TODO reactivate once generic cluster executor is properly released
 # @skip_on_windows
 # def test_restartable_job_cmd_exit_1_no_restart():
@@ -742,6 +759,17 @@ def test_profile():
 @connected
 def test_singularity():
     run(dpath("test_singularity"), deployment_method={DeploymentMethod.APPTAINER})
+
+
+@skip_on_windows
+@connected
+def test_singularity_cluster():
+    run(
+        dpath("test_singularity"),
+        deployment_method={DeploymentMethod.APPTAINER},
+        cluster="./qsub",
+        apptainer_args="--bind /tmp:/tmp",
+    )
 
 
 @skip_on_windows
@@ -1452,7 +1480,7 @@ def test_jupyter_notebook():
 
 
 def test_jupyter_notebook_draft():
-    from snakemake.settings import NotebookEditMode
+    from snakemake.settings.types import NotebookEditMode
 
     run(
         dpath("test_jupyter_notebook_draft"),
@@ -1592,6 +1620,14 @@ def test_module_no_prefixing_modified_paths():
     run(
         dpath("test_module_no_prefixing_modified_paths"),
         targets=["module2/test_final.txt"],
+    )
+
+
+@skip_on_windows
+def test_modules_prefix_local():
+    run(
+        dpath("test_modules_prefix_local"),
+        targets=["out_1/test_final.txt"],
     )
 
 
@@ -2070,6 +2106,24 @@ def test_call_inner():
 
 
 @skip_on_windows  # OS agnostic
+def test_storage_localrule():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        run(
+            dpath("test_storage_localrule"),
+            cluster="./qsub",
+            default_storage_provider="fs",
+            default_storage_prefix="fs-storage",
+            remote_job_local_storage_prefix=Path(tmpdir) / "remotejobs/$JOBID",
+            local_storage_prefix=Path(tmpdir) / "localjobs",
+            shared_fs_usage=[
+                SharedFSUsage.PERSISTENCE,
+                SharedFSUsage.SOURCE_CACHE,
+                SharedFSUsage.SOURCES,
+            ],
+        )
+
+
+@skip_on_windows  # OS agnostic
 def test_update_flag():
     run(dpath("test_update_flag"))
 
@@ -2077,6 +2131,20 @@ def test_update_flag():
 @skip_on_windows  # OS agnostic
 def test_list_input_changes():
     run(dpath("test01"), shellcmd="snakemake --list-input-changes", check_results=False)
+
+
+@skip_on_windows  # OS agnostic
+def test_storage_cleanup_local():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        run(
+            dpath("test_storage_cleanup_local"),
+            cluster="./qsub",
+            default_storage_provider="fs",
+            default_storage_prefix="fs-storage",
+            local_storage_prefix=tmpdir_path,
+        )
+        assert not tmpdir_path.exists() or not any(tmpdir_path.iterdir())
 
 
 @skip_on_windows  # OS agnostic
@@ -2090,8 +2158,23 @@ def test_exists():
 
 
 @skip_on_windows  # OS agnostic
+def test_handle_storage_multi_consumers():
+    run(
+        dpath("test_handle_storage_multi_consumers"),
+        default_storage_provider="fs",
+        default_storage_prefix="storage",
+        cores=1,
+    )
+
+
+@skip_on_windows  # OS agnostic
 def test_github_issue2732():
     run(dpath("test_github_issue2732"))
+
+
+@skip_on_windows
+def test_shell_exec():
+    run(dpath("test_shell_exec"), deployment_method={DeploymentMethod.APPTAINER})
 
 
 def test_expand_list_of_functions():
@@ -2101,3 +2184,12 @@ def test_expand_list_of_functions():
 @skip_on_windows  # OS agnostic
 def test_scheduler_sequential_all_cores():
     run(dpath("test_scheduler_sequential_all_cores"), cores=90)
+
+
+@skip_on_windows  # OS agnostic
+def test_checkpoint_open():
+    run(
+        dpath("test_checkpoint_open"),
+        default_storage_provider="fs",
+        default_storage_prefix="storage",
+    )

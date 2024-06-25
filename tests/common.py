@@ -22,10 +22,11 @@ import tarfile
 from snakemake_interface_executor_plugins.settings import SharedFSUsage
 from snakemake_interface_executor_plugins.registry import ExecutorPluginRegistry
 
-from snakemake import api, settings
+from snakemake import api
 from snakemake.common import ON_WINDOWS
 from snakemake.report.html_reporter import ReportSettings
 from snakemake.resources import ResourceScopes
+from snakemake.settings import types as settings
 
 
 def dpath(path):
@@ -199,6 +200,8 @@ def run(
     printshellcmds=False,
     default_storage_provider=None,
     default_storage_prefix=None,
+    local_storage_prefix=Path(".snakemake/storage"),
+    remote_job_local_storage_prefix=None,
     archive=None,
     cluster=None,
     cluster_status=None,
@@ -224,6 +227,8 @@ def run(
     rerun_triggers=settings.RerunTrigger.all(),
     storage_provider_settings=None,
     shared_fs_usage=None,
+    benchmark_extended=False,
+    apptainer_args="",
 ):
     """
     Test the Snakefile in the path.
@@ -351,6 +356,8 @@ def run(
                         default_storage_prefix=default_storage_prefix,
                         all_temp=all_temp,
                         shared_fs_usage=shared_fs_usage,
+                        local_storage_prefix=local_storage_prefix,
+                        remote_job_local_storage_prefix=remote_job_local_storage_prefix,
                     ),
                     storage_provider_settings=storage_provider_settings,
                     workflow_settings=settings.WorkflowSettings(
@@ -361,6 +368,7 @@ def run(
                         conda_frontend=conda_frontend,
                         conda_prefix=conda_prefix,
                         deployment_method=deployment_method,
+                        apptainer_args=apptainer_args,
                     ),
                     snakefile=Path(original_snakefile if no_tmpdir else snakefile),
                     workdir=Path(path if no_tmpdir else tmpdir),
