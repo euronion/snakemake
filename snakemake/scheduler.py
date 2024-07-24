@@ -292,18 +292,33 @@ class JobScheduler(JobSchedulerExecutorInterface):
                     self.workflow.dag.register_running(run)
 
                 if run:
-                    logger.info(f"Execute {len(run)} jobs...")
+                    if not self.dryrun:
+                        logger.info(f"Execute {len(run)} jobs...")
 
                     # actually run jobs
                     local_runjobs = [job for job in run if job.is_local]
                     runjobs = [job for job in run if not job.is_local]
                     if local_runjobs:
+                        if (
+                            not self.workflow.remote_exec
+                            and not self.workflow.local_exec
+                        ):
+                            # Workflow uses a remote plugin and this scheduling run
+                            # is on the main process. Hence, we have to download
+                            # non-shared remote files for the local jobs.
+                            async_run(
+                                self.workflow.dag.retrieve_storage_inputs(
+                                    jobs=local_runjobs, also_missing_internal=True
+                                )
+                            )
                         self.run(
                             local_runjobs,
                             executor=self._local_executor or self._executor,
                         )
                     if runjobs:
                         self.run(runjobs)
+                elif not self.dryrun:
+                    logger.info("Waiting for more resources.")
         except (KeyboardInterrupt, SystemExit):
             logger.info(
                 "Terminating processes on user request, this might take some time."
