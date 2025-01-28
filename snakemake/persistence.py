@@ -13,7 +13,6 @@ import stat
 import tempfile
 import time
 from base64 import urlsafe_b64encode, b64encode
-from hashlib import md5
 from functools import lru_cache
 from itertools import count
 from pathlib import Path
@@ -716,7 +715,7 @@ class Persistence(PersistenceExecutorInterface):
 
         # create 32 character long hash of the b64id
         # to avoid too long filenames for windows
-        b64id = md5(b64id.encode()).hexdigest()
+        b64id = hashlib.md5(b64id.encode()).hexdigest()
 
         # split into chunks of proper length
         b64id = [b64id[i : i + max_len - 1] for i in range(0, len(b64id), max_len - 1)]
